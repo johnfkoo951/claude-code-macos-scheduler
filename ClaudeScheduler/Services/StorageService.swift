@@ -15,24 +15,13 @@ final class StorageService {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
-    /// 앱 데이터 저장 디렉토리 (캐싱)
-    private lazy var appSupportDirectory: URL = {
-        let paths = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-        let appSupport = paths[0].appendingPathComponent("ClaudeScheduler", isDirectory: true)
-        if !fileManager.fileExists(atPath: appSupport.path) {
-            try? fileManager.createDirectory(at: appSupport, withIntermediateDirectories: true)
-        }
-        return appSupport
-    }()
+    /// 앱 데이터 저장 디렉토리 (observation 추적 제외)
+    @ObservationIgnored
+    private(set) var appSupportDirectory: URL!
 
-    /// 로그 디렉토리 (캐싱)
-    lazy var logsDirectory: URL = {
-        let logs = appSupportDirectory.appendingPathComponent("Logs", isDirectory: true)
-        if !fileManager.fileExists(atPath: logs.path) {
-            try? fileManager.createDirectory(at: logs, withIntermediateDirectories: true)
-        }
-        return logs
-    }()
+    /// 로그 디렉토리 (observation 추적 제외)
+    @ObservationIgnored
+    private(set) var logsDirectory: URL!
 
     private var jobsFileURL: URL {
         appSupportDirectory.appendingPathComponent("jobs.json")
@@ -50,6 +39,20 @@ final class StorageService {
 
         decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
+
+        // 디렉토리 초기화
+        let paths = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+        let appSupport = paths[0].appendingPathComponent("ClaudeScheduler", isDirectory: true)
+        if !fileManager.fileExists(atPath: appSupport.path) {
+            try? fileManager.createDirectory(at: appSupport, withIntermediateDirectories: true)
+        }
+        appSupportDirectory = appSupport
+
+        let logs = appSupport.appendingPathComponent("Logs", isDirectory: true)
+        if !fileManager.fileExists(atPath: logs.path) {
+            try? fileManager.createDirectory(at: logs, withIntermediateDirectories: true)
+        }
+        logsDirectory = logs
 
         loadAll()
     }

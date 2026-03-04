@@ -48,7 +48,7 @@ final class ExecutorService {
 
     /// 백그라운드 모드로 실행
     func executeInBackground(job: Job, completion: ((Result<String, ExecutorError>) -> Void)? = nil) -> Bool {
-        let logPath = StorageService.shared.logFilePath(for: job)
+        let logPath = logFilePath(for: job)
 
         // 로그 파일 헤더 작성
         let header = """
@@ -263,6 +263,25 @@ final class ExecutorService {
     }
 
     // MARK: - Private Methods
+
+    /// 로그 파일 경로 생성 (StorageService @MainActor 의존 제거)
+    private static let logDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd_HHmmss"
+        return f
+    }()
+
+    private func logFilePath(for job: Job) -> URL {
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let jobLogsDir = appSupport
+            .appendingPathComponent("ClaudeScheduler/Logs", isDirectory: true)
+            .appendingPathComponent(job.id.uuidString, isDirectory: true)
+        if !fileManager.fileExists(atPath: jobLogsDir.path) {
+            try? fileManager.createDirectory(at: jobLogsDir, withIntermediateDirectories: true)
+        }
+        let timestamp = Self.logDateFormatter.string(from: Date())
+        return jobLogsDir.appendingPathComponent("\(timestamp).log")
+    }
 
     /// AppleScript용 프롬프트 이스케이프
     private func escapeForAppleScript(_ text: String) -> String {
