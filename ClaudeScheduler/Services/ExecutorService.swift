@@ -107,8 +107,8 @@ final class ExecutorService {
                 logHandle.write(footer.data(using: .utf8) ?? Data())
                 try? logHandle.close()
 
-                // lastRunAt 업데이트
-                DispatchQueue.main.async {
+                // lastRunAt 업데이트 (@MainActor isolated)
+                Task { @MainActor in
                     StorageService.shared.updateLastRunAt(jobId: job.id)
                 }
 
@@ -129,12 +129,7 @@ final class ExecutorService {
 
     /// iTerm에서 새 탭으로 실행
     func executeInITerm(job: Job, completion: ((Result<String, ExecutorError>) -> Void)? = nil) -> Bool {
-        // 프롬프트 이스케이프
-        let escapedPrompt = job.prompt
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "'", with: "'\\''")
-
+        let escapedPrompt = escapeForAppleScript(job.prompt)
         let claudePath = self.claudePath
 
         let script = """
@@ -177,8 +172,10 @@ final class ExecutorService {
                 return false
             }
 
-            // lastRunAt 업데이트
-            StorageService.shared.updateLastRunAt(jobId: job.id)
+            // lastRunAt 업데이트 (@MainActor isolated)
+            Task { @MainActor in
+                StorageService.shared.updateLastRunAt(jobId: job.id)
+            }
 
             completion?(.success("Executed in iTerm"))
             return true
@@ -190,11 +187,7 @@ final class ExecutorService {
 
     /// iTerm에서 실행하고 완료 후 탭 닫기
     func executeInITermAndClose(job: Job, completion: ((Result<String, ExecutorError>) -> Void)? = nil) -> Bool {
-        let escapedPrompt = job.prompt
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "'", with: "'\\''")
-
+        let escapedPrompt = escapeForAppleScript(job.prompt)
         let claudePath = self.claudePath
 
         // 완료 후 탭 닫기를 위한 스크립트
@@ -227,7 +220,9 @@ final class ExecutorService {
                 return false
             }
 
-            StorageService.shared.updateLastRunAt(jobId: job.id)
+            Task { @MainActor in
+                StorageService.shared.updateLastRunAt(jobId: job.id)
+            }
             completion?(.success("Executed in iTerm (will close on completion)"))
             return true
         }
@@ -268,6 +263,14 @@ final class ExecutorService {
     }
 
     // MARK: - Private Methods
+
+    /// AppleScript용 프롬프트 이스케이프
+    private func escapeForAppleScript(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "'", with: "'\\''")
+    }
 
     /// which 명령으로 claude 찾기
     private func findClaudeWithWhich() -> String? {

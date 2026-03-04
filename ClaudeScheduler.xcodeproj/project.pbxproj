@@ -18,6 +18,8 @@
 		81476F692A1245C8805E144D /* Job.swift in Sources */ = {isa = PBXBuildFile; fileRef = E76F5BD513D8C14ADA9102BF /* Job.swift */; };
 		A2CBE3C913543AAE709834BA /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ECDC5BF1D1A56147947CC7C /* ContentView.swift */; };
 		A93EF0AA5B6451E91C58AC71 /* JobViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEEF249C81F86A0205DA9CFB /* JobViewModel.swift */; };
+		F1E2D3C4B5A6F7E8D9C0B1A2 /* ToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* ToastView.swift */; };
+		2F1E0D9C8B7A6F5E4D3C2B1A /* StatusBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7A8B9C0D1E2F /* StatusBarView.swift */; };
 		FE36BC63F58678E1ECF43D5F /* JobListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45B5380E5882A05ABF22C958 /* JobListView.swift */; };
 /* End PBXBuildFile section */
 
@@ -36,6 +38,8 @@
 		C350FFDE29960C9A9856FEE2 /* JobDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobDetailView.swift; sourceTree = "<group>"; };
 		DEEF249C81F86A0205DA9CFB /* JobViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobViewModel.swift; sourceTree = "<group>"; };
 		E76F5BD513D8C14ADA9102BF /* Job.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Job.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* ToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastView.swift; sourceTree = "<group>"; };
+		1A2B3C4D5E6F7A8B9C0D1E2F /* StatusBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -84,6 +88,8 @@
 			isa = PBXGroup;
 			children = (
 				429BD6368BF3D1E1AA8D6FEF /* SchedulePicker.swift */,
+				1A2B3C4D5E6F7A8B9C0D1E2F /* StatusBarView.swift */,
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* ToastView.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -185,7 +191,9 @@
 				021AFBC923EF1D1E69F77C81 /* LaunchdService.swift in Sources */,
 				46BFB88CB5AAA88C51103C00 /* SchedulePicker.swift in Sources */,
 				36E1B809D73FFFC773BE71AB /* SidebarView.swift in Sources */,
+				2F1E0D9C8B7A6F5E4D3C2B1A /* StatusBarView.swift in Sources */,
 				7B8191C8F05DD899FE7F6076 /* StorageService.swift in Sources */,
+				F1E2D3C4B5A6F7E8D9C0B1A2 /* ToastView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

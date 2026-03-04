@@ -10,10 +10,17 @@ struct SidebarView: View {
 
         List(selection: $vm.selectedFolderID) {
             // "전체" 항목
-            Label {
-                Text("전체")
-            } icon: {
-                Image(systemName: "tray.full.fill")
+            HStack {
+                Label {
+                    Text("전체")
+                } icon: {
+                    Image(systemName: "tray.full.fill")
+                }
+                Spacer()
+                Text("\(viewModel.jobs.count)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
             }
             .tag(nil as UUID?)
             .listRowSeparator(.hidden)
@@ -80,11 +87,21 @@ struct SidebarView: View {
                 cancelEditing()
             }
         } else {
-            Label {
-                Text(folder.name)
-            } icon: {
-                Image(systemName: folder.name == "Default" ? "folder.fill" : "folder")
-                    .foregroundStyle(folder.swiftUIColor)
+            HStack {
+                Label {
+                    Text(folder.name)
+                } icon: {
+                    Image(systemName: folder.name == "Default" ? "folder.fill" : "folder")
+                        .foregroundStyle(folder.swiftUIColor)
+                }
+                Spacer()
+                let count = viewModel.jobCount(for: folder)
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                }
             }
             .onTapGesture(count: 2) {
                 if folder.name != "Default" {

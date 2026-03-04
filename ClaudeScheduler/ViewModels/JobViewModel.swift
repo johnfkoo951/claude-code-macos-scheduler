@@ -1,23 +1,25 @@
 import Foundation
 import SwiftUI
-import Combine
 
+@MainActor
 @Observable
 class JobViewModel {
     // MARK: - Properties
-    var jobs: [Job] = []
-    var folders: [Folder] = []
     var selectedJobIDs: Set<UUID> = []
     var selectedFolderID: UUID? = nil
+    var runningJobIDs: Set<UUID> = []
+    var toastMessage: String?
+    var showDeleteConfirmation = false
 
     // Services
     private let storage = StorageService.shared
     private let launchd = LaunchdService.shared
     private let executor = ExecutorService.shared
 
-    private var cancellables = Set<AnyCancellable>()
+    // MARK: - Computed Properties (storage 직접 참조)
 
-    // MARK: - Computed Properties
+    var jobs: [Job] { storage.jobs }
+    var folders: [Folder] { storage.folders }
 
     /// 선택된 폴더에 해당하는 Job만 필터링
     var filteredJobs: [Job] {
@@ -28,40 +30,28 @@ class JobViewModel {
         return jobs.filter { $0.folder == folder.name }
     }
 
-    /// 현재 선택된 단일 Job (디테일 뷰용)
+    /// 현재 선택된 단일 Job
     var selectedJob: Job? {
         guard selectedJobIDs.count == 1,
               let id = selectedJobIDs.first else { return nil }
         return jobs.first { $0.id == id }
     }
 
-    /// Claude CLI 사용 가능 여부
-    var isClaudeAvailable: Bool {
-        executor.isClaudeAvailable()
-    }
+    /// Claude CLI 사용 가능 여부 (캐싱)
+    private(set) var isClaudeAvailable: Bool = false
+    private(set) var claudeVersion: String?
 
-    /// Claude CLI 버전
-    var claudeVersion: String? {
-        executor.getClaudeVersion()
-    }
+    // MARK: - Settings
+    var appTheme: AppTheme = .system
 
     // MARK: - Initialization
 
     init() {
-        // StorageService에서 데이터 구독
-        storage.$jobs
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] newJobs in
-                self?.jobs = newJobs
-            }
-            .store(in: &cancellables)
-
-        storage.$folders
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] newFolders in
-                self?.folders = newFolders
-            }
-            .store(in: &cancellables)
+        // CLI 상태를 비동기로 확인
+        Task {
+            isClaudeAvailable = executor.isClaudeAvailable()
+            claudeVersion = executor.getClaudeVersion()
+        }
     }
 
     // MARK: - Job CRUD
@@ -81,36 +71,40 @@ class JobViewModel {
         storage.addJob(newJob)
         selectedJobIDs = [newJob.id]
 
-        // launchd에 등록 (비활성화 상태로)
         do {
             try launchd.registerJob(newJob)
         } catch {
-            print("[JobViewModel] Failed to register job with launchd: \(error)")
+            print("[JobViewModel] Failed to register job: \(error)")
         }
     }
 
     func updateJob(_ job: Job) {
-        // 이전 상태와 비교하여 활성화 상태 변경 감지
         let previousJob = jobs.first { $0.id == job.id }
         let wasEnabled = previousJob?.isEnabled ?? false
 
         storage.updateJob(job)
 
-        // launchd 업데이트
+        // launchd는 활성화 상태 변경 시에만 동기화
         do {
             if job.isEnabled != wasEnabled {
-                // 활성화 상태 변경
                 if job.isEnabled {
                     try launchd.enableJob(job)
                 } else {
                     try launchd.disableJob(job)
                 }
-            } else if job.isEnabled {
-                // 활성화 상태 유지 중 스케줄 변경
-                try launchd.updateJob(job)
             }
         } catch {
             print("[JobViewModel] Failed to update launchd: \(error)")
+        }
+    }
+
+    /// launchd 스케줄까지 동기화 (debounce 후 호출용)
+    func syncJobToLaunchd(_ job: Job) {
+        guard job.isEnabled else { return }
+        do {
+            try launchd.updateJob(job)
+        } catch {
+            print("[JobViewModel] Failed to sync launchd: \(error)")
         }
     }
 
@@ -121,14 +115,14 @@ class JobViewModel {
             }
         }
         selectedJobIDs.removeAll()
+        showToast("작업이 삭제되었습니다")
     }
 
     func deleteJob(_ job: Job) {
-        // launchd에서 제거
         do {
             try launchd.unregisterJob(job)
         } catch {
-            print("[JobViewModel] Failed to unregister job from launchd: \(error)")
+            print("[JobViewModel] Failed to unregister job: \(error)")
         }
 
         storage.deleteJob(job)
@@ -138,7 +132,15 @@ class JobViewModel {
     // MARK: - Folder CRUD
 
     func addFolder() {
-        let newFolder = Folder(name: "새 폴더")
+        // 중복 이름 자동 넘버링
+        var name = "새 폴더"
+        var counter = 2
+        while folders.contains(where: { $0.name == name }) {
+            name = "새 폴더 \(counter)"
+            counter += 1
+        }
+
+        let newFolder = Folder(name: name)
         storage.addFolder(newFolder)
         selectedFolderID = newFolder.id
     }
@@ -155,6 +157,10 @@ class JobViewModel {
                 var updatedJob = job
                 updatedJob.folder = folder.name
                 storage.updateJob(updatedJob)
+                // launchd도 동기화
+                if updatedJob.isEnabled {
+                    try? launchd.updateJob(updatedJob)
+                }
             }
         }
     }
@@ -169,6 +175,11 @@ class JobViewModel {
         }
     }
 
+    /// 폴더 내 Job 수
+    func jobCount(for folder: Folder) -> Int {
+        jobs.filter { $0.folder == folder.name }.count
+    }
+
     // MARK: - Job Execution
 
     func runSelectedJobs() {
@@ -180,12 +191,20 @@ class JobViewModel {
     }
 
     func runJob(_ job: Job) {
-        executor.executeJob(job) { result in
-            switch result {
-            case .success(let message):
-                print("[JobViewModel] Job executed successfully: \(message)")
-            case .failure(let error):
-                print("[JobViewModel] Job execution failed: \(error.localizedDescription)")
+        runningJobIDs.insert(job.id)
+        showToast("'\(job.name)' 실행 중...")
+
+        executor.executeJob(job) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                self.runningJobIDs.remove(job.id)
+
+                switch result {
+                case .success:
+                    self.showToast("'\(job.name)' 완료")
+                case .failure(let error):
+                    self.showToast("'\(job.name)' 실패: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -210,6 +229,18 @@ class JobViewModel {
         }
     }
 
+    // MARK: - Toast
+
+    func showToast(_ message: String) {
+        toastMessage = message
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if toastMessage == message {
+                toastMessage = nil
+            }
+        }
+    }
+
     // MARK: - Log Management
 
     func logFiles(for job: Job) -> [URL] {
@@ -219,14 +250,20 @@ class JobViewModel {
     func cleanupOldLogs() {
         storage.cleanupOldLogs()
     }
+}
 
-    // MARK: - Launchd Status
+// MARK: - App Theme
 
-    func isJobLoaded(_ job: Job) -> Bool {
-        launchd.isJobLoaded(job)
-    }
+enum AppTheme: String, CaseIterable, Codable {
+    case system = "시스템"
+    case light = "라이트"
+    case dark = "다크"
 
-    func listLoadedJobs() -> [String] {
-        launchd.listAllJobs()
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
     }
 }

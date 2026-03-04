@@ -166,8 +166,11 @@ final class LaunchdService {
     /// plist 내용 생성
     private func generatePlist(for job: Job) -> String {
         let label = label(for: job.id)
-        // 고정된 로그 경로 사용 (타임스탬프 로그는 executor.sh에서 생성)
-        let logDir = StorageService.shared.logsDirectory.appendingPathComponent(job.id.uuidString, isDirectory: true)
+        // 로그 경로를 직접 계산 (StorageService @MainActor 의존 제거)
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let logDir = appSupport
+            .appendingPathComponent("ClaudeScheduler/Logs", isDirectory: true)
+            .appendingPathComponent(job.id.uuidString, isDirectory: true)
         try? fileManager.createDirectory(at: logDir, withIntermediateDirectories: true)
         let logPath = logDir.appendingPathComponent("latest.log").path
 

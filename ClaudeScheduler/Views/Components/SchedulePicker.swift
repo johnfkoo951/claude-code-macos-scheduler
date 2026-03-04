@@ -57,7 +57,7 @@ struct SchedulePicker: View {
                 HStack {
                     Image(systemName: "clock.arrow.circlepath")
                         .foregroundStyle(.blue)
-                    Text("다음 실행: \(nextFire, formatter: dateFormatter)")
+                    Text("다음 실행: \(nextFire, formatter: Self.dateFormatter)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -209,13 +209,13 @@ struct SchedulePicker: View {
         }
     }
 
-    private var dateFormatter: DateFormatter {
+    private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         formatter.locale = Locale(identifier: "ko_KR")
         return formatter
-    }
+    }()
 }
 
 #Preview {

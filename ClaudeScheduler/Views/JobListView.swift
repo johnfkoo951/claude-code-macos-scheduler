@@ -4,10 +4,15 @@ struct JobListView: View {
     @Environment(JobViewModel.self) private var viewModel
     @State private var sortOrder = [KeyPathComparator(\Job.name)]
 
+    /// 정렬된 filteredJobs (원본 배열을 mutate하지 않음)
+    private var sortedJobs: [Job] {
+        viewModel.filteredJobs.sorted(using: sortOrder)
+    }
+
     var body: some View {
         @Bindable var vm = viewModel
 
-        Table(viewModel.filteredJobs, selection: $vm.selectedJobIDs, sortOrder: $sortOrder) {
+        Table(sortedJobs, selection: $vm.selectedJobIDs, sortOrder: $sortOrder) {
             TableColumn("") { job in
                 Toggle("", isOn: Binding(
                     get: { job.isEnabled },
@@ -24,9 +29,15 @@ struct JobListView: View {
 
             TableColumn("이름", value: \.name) { job in
                 HStack(spacing: 8) {
-                    Image(systemName: job.isEnabled ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(job.isEnabled ? .green : .secondary)
-                        .font(.caption)
+                    if viewModel.runningJobIDs.contains(job.id) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.7)
+                    } else {
+                        Image(systemName: job.isEnabled ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(job.isEnabled ? .green : .secondary)
+                            .font(.caption)
+                    }
 
                     Text(job.name)
                         .lineLimit(1)
@@ -41,21 +52,23 @@ struct JobListView: View {
             }
             .width(min: 80, ideal: 120)
 
+            TableColumn("다음 실행") { job in
+                if job.isEnabled, let nextFire = job.schedule.nextFireDate() {
+                    Text(nextFire, style: .relative)
+                        .foregroundStyle(.secondary)
+                        .font(.callout)
+                } else {
+                    Text("-")
+                        .foregroundStyle(.tertiary)
+                        .font(.callout)
+                }
+            }
+            .width(min: 80, ideal: 100)
+
             TableColumn("폴더") { job in
                 Label(job.folder, systemImage: "folder")
                     .foregroundStyle(.secondary)
                     .font(.callout)
-            }
-            .width(min: 80, ideal: 100)
-
-            TableColumn("실행 방식") { job in
-                HStack(spacing: 4) {
-                    Image(systemName: job.runInBackground ? "gearshape.2" : "terminal")
-                        .font(.caption)
-                    Text(job.runInBackground ? "백그라운드" : "iTerm")
-                        .font(.callout)
-                }
-                .foregroundStyle(.secondary)
             }
             .width(min: 80, ideal: 100)
 
@@ -71,9 +84,6 @@ struct JobListView: View {
                 }
             }
             .width(min: 80, ideal: 100)
-        }
-        .onChange(of: sortOrder) { _, newOrder in
-            viewModel.jobs.sort(using: newOrder)
         }
         .contextMenu(forSelectionType: UUID.self) { selectedIDs in
             if !selectedIDs.isEmpty {
@@ -115,13 +125,12 @@ struct JobListView: View {
 
                 Button(role: .destructive) {
                     viewModel.selectedJobIDs = selectedIDs
-                    viewModel.deleteSelectedJobs()
+                    viewModel.showDeleteConfirmation = true
                 } label: {
                     Label("삭제", systemImage: "trash")
                 }
             }
         } primaryAction: { selectedIDs in
-            // 더블클릭 시 첫 번째 선택된 Job 실행
             if let id = selectedIDs.first,
                let job = viewModel.jobs.first(where: { $0.id == id }) {
                 viewModel.runJob(job)

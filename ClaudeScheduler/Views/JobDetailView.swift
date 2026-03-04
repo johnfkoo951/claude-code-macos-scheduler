@@ -28,7 +28,7 @@ struct JobDetailView: View {
                 .buttonStyle(.borderedProminent)
 
                 Button("모두 삭제", role: .destructive) {
-                    viewModel.deleteSelectedJobs()
+                    viewModel.showDeleteConfirmation = true
                 }
                 .buttonStyle(.bordered)
             }
@@ -56,6 +56,10 @@ struct JobEditForm: View {
     @State private var schedule: Schedule = .interval(seconds: 3600)
     @State private var isEnabled: Bool = true
     @State private var runInBackground: Bool = true
+    @State private var selectedLogURL: URL?
+
+    /// Debounce용 Task (이전 Task를 취소하고 새로 생성)
+    @State private var saveTask: Task<Void, Never>?
 
     var body: some View {
         Form {
@@ -104,6 +108,43 @@ struct JobEditForm: View {
                 }
             }
 
+            // 실행 로그 섹션
+            Section("실행 로그") {
+                let logs = viewModel.logFiles(for: job)
+                if logs.isEmpty {
+                    Text("로그가 없습니다")
+                        .foregroundStyle(.tertiary)
+                        .font(.caption)
+                } else {
+                    ForEach(logs.prefix(5), id: \.self) { logURL in
+                        Button {
+                            selectedLogURL = logURL
+                        } label: {
+                            HStack {
+                                Image(systemName: "doc.text")
+                                    .foregroundStyle(.secondary)
+                                Text(logURL.lastPathComponent)
+                                    .font(.caption)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if logs.count > 5 {
+                        Button("Finder에서 열기") {
+                            if let firstLog = logs.first {
+                                NSWorkspace.shared.activateFileViewerSelecting([firstLog.deletingLastPathComponent()])
+                            }
+                        }
+                        .font(.caption)
+                    }
+                }
+            }
+
             Section {
                 HStack {
                     if let lastRun = job.lastRunAt {
@@ -119,7 +160,7 @@ struct JobEditForm: View {
                     Spacer()
 
                     Button("즉시 실행") {
-                        saveChanges()
+                        flushSave()
                         if let updatedJob = viewModel.jobs.first(where: { $0.id == job.id }) {
                             viewModel.runJob(updatedJob)
                         }
@@ -130,18 +171,30 @@ struct JobEditForm: View {
         }
         .formStyle(.grouped)
         .padding()
+        .sheet(item: $selectedLogURL) { logURL in
+            LogViewerSheet(logURL: logURL)
+        }
         .onAppear {
             loadJobData()
+        }
+        .onDisappear {
+            // 뷰 떠날 때 즉시 저장 + launchd 동기화
+            flushSave()
+            if let updatedJob = viewModel.jobs.first(where: { $0.id == job.id }) {
+                viewModel.syncJobToLaunchd(updatedJob)
+            }
         }
         .onChange(of: job.id) { _, _ in
             loadJobData()
         }
-        .onChange(of: name) { _, _ in saveChanges() }
-        .onChange(of: prompt) { _, _ in saveChanges() }
-        .onChange(of: selectedFolder) { _, _ in saveChanges() }
-        .onChange(of: schedule) { _, _ in saveChanges() }
-        .onChange(of: isEnabled) { _, _ in saveChanges() }
-        .onChange(of: runInBackground) { _, _ in saveChanges() }
+        // 활성화/스케줄 변경은 즉시 저장 (launchd 동기화 필요)
+        .onChange(of: isEnabled) { _, _ in saveImmediately() }
+        .onChange(of: schedule) { _, _ in saveImmediately() }
+        // 텍스트 입력은 debounce (0.5초)
+        .onChange(of: name) { _, _ in debounceSave() }
+        .onChange(of: prompt) { _, _ in debounceSave() }
+        .onChange(of: selectedFolder) { _, _ in debounceSave() }
+        .onChange(of: runInBackground) { _, _ in debounceSave() }
     }
 
     private func loadJobData() {
@@ -153,7 +206,36 @@ struct JobEditForm: View {
         runInBackground = job.runInBackground
     }
 
-    private func saveChanges() {
+    /// debounce 저장 — 0.5초 후 storage에만 저장 (launchd 미동기화)
+    private func debounceSave() {
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            saveToStorage()
+        }
+    }
+
+    /// 즉시 저장 + launchd 동기화 (활성화/스케줄 변경 시)
+    private func saveImmediately() {
+        saveTask?.cancel()
+        let updatedJob = buildUpdatedJob()
+        viewModel.updateJob(updatedJob)
+    }
+
+    /// 즉시 flush — pending debounce가 있으면 즉시 실행
+    private func flushSave() {
+        saveTask?.cancel()
+        saveToStorage()
+    }
+
+    /// storage에만 저장 (launchd 동기화 없이)
+    private func saveToStorage() {
+        let updatedJob = buildUpdatedJob()
+        viewModel.updateJob(updatedJob)
+    }
+
+    private func buildUpdatedJob() -> Job {
         var updatedJob = job
         updatedJob.name = name
         updatedJob.prompt = prompt
@@ -161,9 +243,53 @@ struct JobEditForm: View {
         updatedJob.schedule = schedule
         updatedJob.isEnabled = isEnabled
         updatedJob.runInBackground = runInBackground
-
-        viewModel.updateJob(updatedJob)
+        return updatedJob
     }
+}
+
+// MARK: - LogViewerSheet
+
+struct LogViewerSheet: View {
+    let logURL: URL
+    @Environment(\.dismiss) private var dismiss
+    @State private var content: String = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(logURL.lastPathComponent)
+                    .font(.headline)
+                Spacer()
+                Button("Finder에서 열기") {
+                    NSWorkspace.shared.activateFileViewerSelecting([logURL])
+                }
+                .controlSize(.small)
+                Button("닫기") { dismiss() }
+                    .controlSize(.small)
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                Text(content)
+                    .font(.body.monospaced())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+            }
+        }
+        .frame(width: 600, height: 400)
+        .onAppear {
+            content = (try? String(contentsOf: logURL, encoding: .utf8)) ?? "로그를 읽을 수 없습니다"
+        }
+    }
+}
+
+// URL을 sheet(item:)에서 사용하기 위한 Identifiable 적합
+extension URL: @retroactive Identifiable {
+    public var id: String { absoluteString }
 }
 
 #Preview {

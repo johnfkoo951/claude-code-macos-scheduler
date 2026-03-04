@@ -53,13 +53,13 @@ extension Color {
         }
     }
 
-    /// Color를 hex 문자열로 변환
+    /// Color를 hex 문자열로 변환 (sRGB 색공간으로 변환 후)
     func toHex() -> String? {
-        guard let components = NSColor(self).cgColor.components else { return nil }
+        guard let srgb = NSColor(self).usingColorSpace(.sRGB) else { return nil }
 
-        let r = components.count > 0 ? components[0] : 0
-        let g = components.count > 1 ? components[1] : 0
-        let b = components.count > 2 ? components[2] : 0
+        let r = srgb.redComponent
+        let g = srgb.greenComponent
+        let b = srgb.blueComponent
 
         return String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
     }

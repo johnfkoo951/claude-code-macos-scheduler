@@ -11,7 +11,7 @@ struct Job: Identifiable, Codable, Hashable {
     var createdAt: Date
     var lastRunAt: Date?
 
-    init(id: UUID = UUID(), name: String, prompt: String, folder: String = "Default", schedule: Schedule, isEnabled: Bool = true, runInBackground: Bool = true) {
+    init(id: UUID = UUID(), name: String, prompt: String, folder: String = "Default", schedule: Schedule, isEnabled: Bool = true, runInBackground: Bool = true, createdAt: Date = Date()) {
         self.id = id
         self.name = name
         self.prompt = prompt
@@ -19,7 +19,7 @@ struct Job: Identifiable, Codable, Hashable {
         self.schedule = schedule
         self.isEnabled = isEnabled
         self.runInBackground = runInBackground
-        self.createdAt = Date()
+        self.createdAt = createdAt
     }
 }
 
